@@ -3019,7 +3019,7 @@ const useBreakpoint = () => {
 };
 
   const useBills = (initialBills) => {
-  const [bills, setBills] = useState(() => storageUtils.load('tax_bills', initialBills));
+  const [bills, setBills] = useState(initialBills);
   
   // bills가 변경될 때마다 localStorage에 저장 (디바운스 적용)
   useEffect(() => {
@@ -3033,16 +3033,12 @@ const useBreakpoint = () => {
     setBills(prev => prev.map(bill => {
       if (bill.id === id) {
         const updatedBill = { ...bill, status: newStatus };
-        
-        // 완료 상태로 변경 시 완료일 기록 (한국 시간 기준)
         if (newStatus === 'completed') {
           updatedBill.completedDate = koreaTimeUtils.getKoreaToday();
-        }
-        // 완료 상태에서 다른 상태로 변경 시 완료일 삭제
-        else if (bill.status === 'completed') {
+        } else if (bill.status === 'completed') {
           updatedBill.completedDate = null;
         }
-        
+        supabase.from('tax_bills').update({ status: updatedBill.status, completed_date: updatedBill.completedDate }).eq('id', id);
         return updatedBill;
       }
       return bill;
@@ -4987,29 +4983,52 @@ const DateModalContent = ({ selectedDateBills, selectedCompletedBills, selectedS
       return;
     }
     
-    setIsLoggingIn(true);
+      setIsLoggingIn(true);
+  setLoginError('');
+  try {
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: loginForm.email,
+      password: loginForm.password
+    });
+    if (signInError) throw signInError;
+    const user = signInData.user;
+    if (!user) throw new Error('로그인 실패');
+
+    const { data: profiles, error: profileError } = await supabase
+      .from('users')
+      .select('id,email,name,role,status')
+      .eq('id', user.id)
+      .limit(1);
+    if (profileError) throw profileError;
+
+    const profile = profiles && profiles[0] ? profiles[0] : {
+      id: user.id,
+      email: user.email,
+      name: user.email?.split('@')[0] || '사용자',
+      role: 'viewer',
+      status: 'active'
+    };
+
+    setAccounts([{
+      id: profile.id,
+      email: profile.email,
+      password: '',
+      role: profile.role,
+      name: profile.name,
+      createdAt: koreaTimeUtils.getKoreaToday(),
+      status: profile.status || 'active'
+    }]);
+
+    setIsLoggedIn(true);
+    setCurrentUserId(profile.id);
+    setLoginForm({ email: '', password: '' });
     setLoginError('');
-    
-    // 실제 구현에서는 여기서 API 호출
-    setTimeout(() => {
-      // 등록된 계정에서 이메일과 패스워드 확인
-      const foundAccount = accounts.find(account => 
-        account.email === loginForm.email && 
-        account.password === loginForm.password &&
-        account.status === 'active'
-      );
-      
-      if (foundAccount) {
-        setIsLoggedIn(true);
-        setCurrentUserId(foundAccount.id);
-        // currentView는 useEffect에서 자동으로 dashboard로 변경됨
-        setLoginForm({ email: '', password: '' });
-        setLoginError('');
-      } else {
-        setLoginError('이메일 또는 패스워드가 올바르지 않습니다.');
-      }
-      setIsLoggingIn(false);
-    }, 1000);
+  } catch (e) {
+    console.error('Supabase login error:', e);
+    setLoginError('이메일 또는 패스워드가 올바르지 않습니다.');
+  } finally {
+    setIsLoggingIn(false);
+  }
   }, [loginForm, accounts]);
 
   const handleForgotPassword = useCallback(async () => {
