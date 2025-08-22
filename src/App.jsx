@@ -1946,29 +1946,20 @@ const debounce = (func, wait) => {
 // localStorage 유틸리티 함수들 (Vercel 배포용 - 주석 처리)
 const storageUtils = {
   save: (key, data) => {
-    // localStorage 비활성화 - Vercel 서버 배포용
-    /*
     try {
-      // 데이터 크기 체크 (5MB 제한)
       const serialized = JSON.stringify(data);
       if (serialized.length > 5 * 1024 * 1024) {
         console.warn('Data too large for localStorage:', key);
         return false;
       }
-      
       localStorage.setItem(key, serialized);
       return true;
     } catch (error) {
       console.error('Failed to save to localStorage:', error);
-      
-      // 저장소가 가득 찬 경우 오래된 데이터 정리 시도
       if (error.name === 'QuotaExceededError') {
         try {
-          // 임시 백업 데이터 삭제
           const keysToClean = Object.keys(localStorage).filter(k => k.startsWith('temp_') || k.startsWith('backup_'));
           keysToClean.forEach(k => localStorage.removeItem(k));
-          
-          // 다시 저장 시도
           localStorage.setItem(key, JSON.stringify(data));
           return true;
         } catch (retryError) {
@@ -1977,21 +1968,13 @@ const storageUtils = {
       }
       return false;
     }
-    */
-    console.log(`[Vercel Mode] Would save data for key: ${key}`);
-    return true; // 서버 모드에서는 항상 성공으로 처리
   },
   
   load: (key, defaultValue = null) => {
-    // localStorage 비활성화 - Vercel 서버 배포용
-    /*
     try {
       const item = localStorage.getItem(key);
       if (!item) return defaultValue;
-      
       const parsed = JSON.parse(item);
-      
-      // 데이터 무결성 검사
       if (key === 'tax_bills' && Array.isArray(parsed)) {
         return parsed.filter(bill => bill && bill.id && bill.name);
       }
@@ -2001,21 +1984,14 @@ const storageUtils = {
       if (key === 'user_accounts' && Array.isArray(parsed)) {
         return parsed.filter(account => account && account.id && account.email);
       }
-      
       return parsed;
     } catch (error) {
       console.error('Failed to load from localStorage:', error);
-      console.warn(`Corrupted data detected for key: ${key}, using default value`);
       return defaultValue;
     }
-    */
-    console.log(`[Vercel Mode] Would load data for key: ${key}, returning default`);
-    return defaultValue; // 서버 모드에서는 항상 기본값 반환
   },
   
   remove: (key) => {
-    // localStorage 비활성화 - Vercel 서버 배포용
-    /*
     try {
       localStorage.removeItem(key);
       return true;
@@ -2023,22 +1999,16 @@ const storageUtils = {
       console.error('Failed to remove from localStorage:', error);
       return false;
     }
-    */
-    console.log(`[Vercel Mode] Would remove data for key: ${key}`);
-    return true; // 서버 모드에서는 항상 성공으로 처리
   },
   
   // 백업 기능 추가
   backup: (keys = ['tax_bills', 'charging_stations', 'user_accounts']) => {
-    // localStorage 비활성화 - Vercel 서버 배포용
-    /*
     try {
       const backup = {};
       keys.forEach(key => {
         const data = localStorage.getItem(key);
         if (data) backup[key] = data;
       });
-      
       const backupKey = `backup_${new Date().toISOString().split('T')[0]}`;
       localStorage.setItem(backupKey, JSON.stringify(backup));
       return backupKey;
@@ -2046,9 +2016,6 @@ const storageUtils = {
       console.error('Failed to create backup:', error);
       return null;
     }
-    */
-    console.log(`[Vercel Mode] Would create backup for keys:`, keys);
-    return null; // 서버 모드에서는 백업 불가
   }
 };
 
@@ -3052,30 +3019,15 @@ const useBreakpoint = () => {
 };
 
   const useBills = (initialBills) => {
-  const [bills, setBills] = useState(initialBills); // localStorage 사용 중단
+  const [bills, setBills] = useState(() => storageUtils.load('tax_bills', initialBills));
   
-  // bills가 변경될 때마다 localStorage에 저장 (디바운스 적용) - Vercel 배포용 주석 처리
-  /*
+  // bills가 변경될 때마다 localStorage에 저장 (디바운스 적용)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      console.log('=== localStorage 저장 시도 ===');
-      console.log('저장할 bills 개수:', bills.length);
-      console.log('bills 데이터 샘플:', bills.slice(0, 2));
-      
-      const success = storageUtils.save('tax_bills', bills);
-      console.log('localStorage 저장 결과:', success ? '성공' : '실패');
-      
-      if (success) {
-        // 저장 확인을 위해 다시 읽어보기
-        const saved = storageUtils.load('tax_bills', []);
-        console.log('저장 확인 - 읽어온 데이터 개수:', saved.length);
-      }
-      console.log('=== localStorage 저장 완료 ===');
-    }, 100); // 100ms 디바운스
-    
+      storageUtils.save('tax_bills', bills);
+    }, 100);
     return () => clearTimeout(timeoutId);
   }, [bills]);
-  */
   
   const updateBillStatus = useCallback((id, newStatus) => {
     setBills(prev => prev.map(bill => {
@@ -3300,14 +3252,12 @@ const useBreakpoint = () => {
 };
 
 const useStations = (initialStations) => {
-  const [stations, setStations] = useState(initialStations); // localStorage 사용 중단
+  const [stations, setStations] = useState(() => storageUtils.load('charging_stations', initialStations));
   
-  // stations가 변경될 때마다 localStorage에 저장 - Vercel 배포용 주석 처리
-  /*
+  // stations가 변경될 때마다 localStorage에 저장
   useEffect(() => {
     storageUtils.save('charging_stations', stations);
   }, [stations]);
-  */
   
   const addStation = useCallback((newStation) => {
     const stationWithDate = {
@@ -3606,12 +3556,11 @@ const StatsCard = ({ title, value, subtitle, icon, color }) => {
 
 const TaxManagementApp = () => {
   // 로그인 상태 관리 - Vercel 배포용 localStorage 비활성화
-  const [isLoggedIn, setIsLoggedIn] = useState(false); // 기본값으로 초기화
-  const [currentUserId, setCurrentUserId] = useState(null); // 기본값으로 초기화
+  const [isLoggedIn, setIsLoggedIn] = useState(() => storageUtils.load('is_logged_in', false));
+  const [currentUserId, setCurrentUserId] = useState(() => storageUtils.load('current_user_id', null));
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
 
-  // 로그인 상태 변경 시 localStorage에 저장 - Vercel 배포용 주석 처리
-  /*
+  // 로그인 상태 변경 시 localStorage에 저장
   useEffect(() => {
     storageUtils.save('is_logged_in', isLoggedIn);
   }, [isLoggedIn]);
@@ -3619,7 +3568,6 @@ const TaxManagementApp = () => {
   useEffect(() => {
     storageUtils.save('current_user_id', currentUserId);
   }, [currentUserId]);
-  */
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
@@ -3627,9 +3575,9 @@ const TaxManagementApp = () => {
   const [loginError, setLoginError] = useState('');
 
   // 초기 데이터
-  const initialBills = [];
+  const initialBills = storageUtils.load('tax_bills', []);
 
-  const initialStations = [];
+  const initialStations = storageUtils.load('charging_stations', []);
 
   const { bills, setBills, updateBillStatus, addBill, updateBill, deleteBill } = useBills(initialBills);
   const { breakpoint, isMobile, isTablet, isDesktop, isMobileOrTablet } = useBreakpoint();
