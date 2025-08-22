@@ -3046,7 +3046,7 @@ const useBreakpoint = () => {
   }, []);
 
   const addBill = useCallback((newBill) => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         console.log('=== addBill 함수 시작 ===');
         console.log('받은 newBill:', newBill);
