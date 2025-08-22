@@ -3048,200 +3048,57 @@ const useBreakpoint = () => {
   const addBill = useCallback((newBill) => {
     return new Promise(async (resolve, reject) => {
       try {
-        console.log('=== addBill 함수 시작 ===');
-        console.log('받은 newBill:', newBill);
-        console.log('현재 bills 상태:', bills);
-        console.log('bills 배열 길이:', bills.length);
-        
-        // 입력 데이터 검증
-        if (!newBill || !newBill.name || !newBill.dueDate || !newBill.category || !newBill.stationName) {
-          console.error('addBill: 필수 필드 누락', {
-            newBill: !!newBill,
-            name: !!newBill?.name,
-            dueDate: !!newBill?.dueDate,
-            category: !!newBill?.category,
-            stationName: !!newBill?.stationName
-          });
-          reject(new Error('필수 정보가 누락되었습니다.'));
-          return;
-        }
-
-        if (newBill.isRecurring && (newBill.category === '재산세' || newBill.category === '기타세')) {
-          console.log('반복 납부 세금 생성 시작');
-          
-          // 반복 납부 설정 시 향후 5년치 자동 생성
-          const newBills = [];
-          const baseDate = new Date(newBill.dueDate);
-          const recurringGroupId = Date.now();
-          
-          for (let i = 0; i < 6; i++) { // 현재 연도 + 5년
-            const yearDate = new Date(baseDate);
-            yearDate.setFullYear(baseDate.getFullYear() + i);
-            
-            const bill = {
-              id: Date.now() + i + Math.random() * 1000, // 고유 ID 보장
-              ...newBill,
-              dueDate: yearDate.toISOString().split('T')[0],
-              amount: i === 0 ? newBill.amount : '미정', // 첫 번째만 입력 금액, 나머지는 미정
-              // 반복 납부 시 미래 세금들은 납부 예정으로 설정
-              status: i === 0 ? newBill.status : (newBill.category === '취득세' ? 'accounting_review' : 'pending'),
-              uploadedAt: koreaTimeUtils.getKoreaToday(),
-              completedDate: i === 0 && newBill.status === 'completed' ? newBill.completedDate : null,
-              isRecurring: true,
-              recurringGroup: recurringGroupId, // 반복 그룹 식별자
-              isOriginal: i === 0 // 원본 여부
-            };
-            newBills.push(bill);
-            console.log(`반복 납부 ${i + 1}번째 생성:`, bill);
-          }
-          
-          console.log('setBills 호출 전 bills 상태:', bills.length);
-          console.log('추가할 bills:', newBills.length);
-          
-          setBills(prevBills => {
-            console.log('setBills 콜백 실행 - prevBills:', prevBills.length);
-            const updatedBills = [...prevBills, ...newBills];
-            console.log('반복 납부 bills 업데이트:', {
-              이전개수: prevBills.length,
-              추가개수: newBills.length,
-              최종개수: updatedBills.length
-            });
-            
-            // 즉시 localStorage에도 저장 (강제)
-            try {
-              const success = storageUtils.save('tax_bills', updatedBills);
-              console.log('즉시 localStorage 저장 결과:', success);
-              
-              // 저장 확인
-              const saved = storageUtils.load('tax_bills', []);
-              console.log('저장 확인 - 읽어온 데이터 개수:', saved.length);
-              
-              resolve(true); // 성공 시 resolve
-            } catch (storageError) {
-              console.error('localStorage 저장 실패:', storageError);
-              reject(storageError);
-            }
-            
-            return updatedBills;
-          });
-          
-          console.log(`반복 납부 ${newBills.length}개 생성 완료`);
-          
-        } else {
-          console.log('일반 납부 세금 생성 시작');
-          
-          // 일반 납부 또는 취득세
-          const bill = {
-            id: Date.now() + Math.random() * 1000, // 고유 ID 보장
-            ...newBill, 
-            uploadedAt: koreaTimeUtils.getKoreaToday(),
-            completedDate: null,
-            isRecurring: false
-          };
-          
-          console.log('일반 납부 bill 생성:', bill);
-          console.log('setBills 호출 전 bills 상태:', bills.length);
-          
-          setBills(prevBills => {
-            console.log('setBills 콜백 실행 - prevBills:', prevBills.length);
-            const updatedBills = [...prevBills, bill];
-            console.log('일반 납부 bills 업데이트:', {
-              이전개수: prevBills.length,
-              추가된bill: bill,
-              최종개수: updatedBills.length
-            });
-            
-            // 즉시 localStorage에도 저장 (강제)
-            try {
-              const success = storageUtils.save('tax_bills', updatedBills);
-              console.log('즉시 localStorage 저장 결과:', success);
-              
-              // 저장 확인
-              const saved = storageUtils.load('tax_bills', []);
-              console.log('저장 확인 - 읽어온 데이터 개수:', saved.length);
-              
-              resolve(true); // 성공 시 resolve
-            } catch (storageError) {
-              console.error('localStorage 저장 실패:', storageError);
-              reject(storageError);
-            }
-            
-            return updatedBills;
-          });
-          
-          console.log('일반 납부 생성 완료');
-        }
+        const { data: sessionData } = await supabase.auth.getSession();
+        const userId = sessionData?.session?.user?.id;
+        if (!userId) return reject(new Error('로그인이 필요합니다'));
+        const payload = {
+          user_id: userId,
+          name: newBill.name,
+          amount: newBill.amount,
+          due_date: newBill.dueDate,
+          category: newBill.category,
+          station_name: newBill.stationName,
+          address: newBill.address,
+          status: newBill.status || 'pending',
+          is_recurring: !!newBill.isRecurring
+        };
+        const { data, error } = await supabase.from('tax_bills').insert(payload).select('*').single();
+        if (error) throw error;
+        setBills(prev => [...prev, data]);
+        resolve(true);
       } catch (error) {
-        console.error('❌ addBill 실행 중 오류:', error);
-        console.error('Error details:', {
-          message: error.message,
-          stack: error.stack,
-          newBill: newBill
-        });
-        reject(error); // 에러 시 reject
+        console.error('❌ addBill supabase error:', error);
+        reject(error);
       }
     });
-  }, [bills, setBills]);
+  }, [setBills]);
 
-  const updateBill = useCallback((id, updatedBill) => {
-    setBills(prev => prev.map(bill => {
-      if (bill.id === id) {
-        const updated = { ...bill, ...updatedBill };
-        
-        // 반복 납부 설정 변경 시 처리
-        if (bill.isOriginal && updatedBill.hasOwnProperty('isRecurring')) {
-          if (updatedBill.isRecurring && !bill.isRecurring) {
-            // 반복 켜기: 미래 납부 생성
-            const baseDate = new Date(updated.dueDate);
-            const newBills = [];
-            
-            for (let i = 1; i < 6; i++) { // 내년부터 5년
-              const yearDate = new Date(baseDate);
-              yearDate.setFullYear(baseDate.getFullYear() + i);
-              
-              const futureBill = {
-                id: Date.now() + i,
-                ...updated,
-                dueDate: yearDate.toISOString().split('T')[0],
-                amount: '미정',
-                isRecurring: true,
-                recurringGroup: bill.recurringGroup || Date.now(),
-                isOriginal: false
-              };
-              newBills.push(futureBill);
-            }
-            
-            setTimeout(() => {
-              setBills(prev => [...prev, ...newBills]);
-            }, 0);
-          } else if (!updatedBill.isRecurring && bill.isRecurring) {
-            // 반복 끄기: 미래 납부 삭제
-            setTimeout(() => {
-              setBills(prev => prev.filter(b => 
-                !(b.recurringGroup === bill.recurringGroup && !b.isOriginal)
-              ));
-            }, 0);
-          }
-        }
-        
-        return updated;
-      }
-      return bill;
-    }));
+  const updateBill = useCallback(async (id, updatedBill) => {
+    try {
+      const patch = {
+        name: updatedBill.name,
+        amount: updatedBill.amount,
+        due_date: updatedBill.dueDate,
+        category: updatedBill.category,
+        station_name: updatedBill.stationName,
+        address: updatedBill.address,
+        status: updatedBill.status,
+        is_recurring: updatedBill.isRecurring
+      };
+      await supabase.from('tax_bills').update(patch).eq('id', id);
+      setBills(prev => prev.map(bill => (bill.id === id ? { ...bill, ...updatedBill } : bill)));
+    } catch (e) {
+      console.error('updateBill supabase error:', e);
+    }
   }, []);
 
-  const deleteBill = useCallback((id) => {
-    setBills(prev => {
-      const billToDelete = prev.find(bill => bill.id === id);
-      
-      if (billToDelete?.isRecurring && billToDelete?.isOriginal) {
-        // 원본 삭제 시 관련된 모든 반복 납부 삭제
-        return prev.filter(bill => bill.recurringGroup !== billToDelete.recurringGroup);
-      } else {
-        // 일반 삭제
-        return prev.filter(bill => bill.id !== id);
-      }
-    });
+  const deleteBill = useCallback(async (id) => {
+    try {
+      await supabase.from('tax_bills').delete().eq('id', id);
+      setBills(prev => prev.filter(bill => bill.id !== id));
+    } catch (e) {
+      console.error('deleteBill supabase error:', e);
+    }
   }, []);
 
   return { bills, setBills, updateBillStatus, addBill, updateBill, deleteBill };
