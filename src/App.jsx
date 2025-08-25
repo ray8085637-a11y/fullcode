@@ -825,47 +825,31 @@ const GoogleVisionOCR = {
     });
   },
 
-  // 구글 비전 API 호출
+  // 구글 비전 API 호출 (서버리스 프록시 사용)
   callGoogleVisionAPI: async (base64Image) => {
-    // API 키 유효성 검사
-    if (!GoogleVisionOCR.hasValidApiKey()) {
-      throw new Error('구글 비전 API 키가 설정되지 않았습니다. GoogleVisionOCR.setApiKey() 함수를 사용하여 설정해주세요.');
-    }
-
-    const requestBody = {
-      requests: [
-        {
-          image: {
-            content: base64Image
-          },
-          features: GoogleVisionOCR.apiConfig.features,
-          imageContext: {
-            languageHints: ['ko', 'en'] // 한국어와 영어 인식
-          }
-        }
-      ]
-    };
-
     try {
-      const response = await fetch(`${GoogleVisionOCR.apiConfig.endpoint}?key=${GoogleVisionOCR.apiConfig.apiKey}`, {
+      const requestBody = {
+        requests: [
+          {
+            image: { content: base64Image },
+            features: GoogleVisionOCR.apiConfig.features,
+            imageContext: { languageHints: ['ko', 'en'] }
+          }
+        ]
+      };
+
+      const response = await fetch('/api/vision-annotate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`구글 비전 API 오류: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
       const data = await response.json();
-      
+      if (!response.ok) {
+        throw new Error(data?.error || `구글 비전 API 오류: HTTP ${response.status}`);
+      }
       if (data.responses?.[0]?.error) {
         throw new Error(`API 응답 오류: ${data.responses[0].error.message}`);
       }
-
       return data.responses[0];
     } catch (error) {
       console.error('구글 비전 API 호출 실패:', error);
