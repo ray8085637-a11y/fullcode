@@ -3563,6 +3563,9 @@ const TaxManagementApp = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false); // 기본값으로 초기화
   const [currentUserId, setCurrentUserId] = useState(null); // 기본값으로 초기화
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [authSession, setAuthSession] = useState(null);
+  const [dbUser, setDbUser] = useState(null);
+  const [authInitDone, setAuthInitDone] = useState(false);
 
   // 로그인 상태 변경 시 localStorage에 저장 - Vercel 배포용 주석 처리
   /*
@@ -3609,10 +3612,7 @@ const TaxManagementApp = () => {
   const { trash, moveToTrash, restoreFromTrash, permanentDelete, emptyTrash } = useTrash();
 
   // 상태들 - 로그인 상태에 따른 초기 뷰 설정
-  const [currentView, setCurrentView] = useState(() => {
-    const savedLoginState = storageUtils.load('is_logged_in', false);
-    return savedLoginState ? 'dashboard' : 'login';
-  });
+  const [currentView, setCurrentView] = useState('login');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [isToggleHovered, setIsToggleHovered] = useState(false);
@@ -3682,6 +3682,71 @@ const TaxManagementApp = () => {
     
     // 컴포넌트 언마운트 시 이벤트 리스너 제거
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Supabase auth session bootstrap
+  useEffect(() => {
+    if (!SUPABASE_CONFIGURED || !supabase) {
+      setAuthInitDone(true);
+      return;
+    }
+
+    let isMounted = true;
+
+    const init = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
+        setAuthSession(session);
+
+        if (session?.user?.id) {
+          setIsLoggedIn(true);
+          setCurrentUserId(session.user.id);
+          setCurrentView('dashboard');
+          // fetch public.users row
+          const { data: userRow } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          if (userRow) setDbUser(userRow);
+        } else {
+          setIsLoggedIn(false);
+          setCurrentUserId(null);
+          setCurrentView('login');
+          setDbUser(null);
+        }
+      } finally {
+        if (isMounted) setAuthInitDone(true);
+      }
+    };
+
+    init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setAuthSession(session);
+      if (session?.user?.id) {
+        setIsLoggedIn(true);
+        setCurrentUserId(session.user.id);
+        setCurrentView('dashboard');
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (userRow) setDbUser(userRow);
+      } else {
+        setIsLoggedIn(false);
+        setCurrentUserId(null);
+        setCurrentView('login');
+        setDbUser(null);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      sub?.subscription?.unsubscribe?.();
+    };
   }, []);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [visibleCounts, setVisibleCounts] = useState({ accounting_review: 8, pending: 8, completed: 8 });
@@ -3972,7 +4037,19 @@ const TaxManagementApp = () => {
     }
   }, [showError, showSuccess]);
 
-  const currentUser = accounts.find(account => account.id === currentUserId) || null;
+  const currentUser = useMemo(() => {
+    if (dbUser && currentUserId === dbUser.id) {
+      return {
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        status: dbUser.status || 'active'
+      };
+    }
+    // fallback: legacy local account for non-configured Supabase
+    return accounts.find(account => account.id === currentUserId) || null;
+  }, [dbUser, currentUserId, accounts]);
 
   // 권한 확인 함수들
   const canManageAccounts = currentUser?.role === 'super_admin' || currentUser?.role === 'admin';
@@ -4904,30 +4981,39 @@ const DateModalContent = ({ selectedDateBills, selectedCompletedBills, selectedS
     }
     
     setIsCreatingAccount(true);
-    
     try {
-      // 실제 구현에서는 여기서 API 호출
-      setTimeout(() => {
-        const account = {
-          id: Date.now(),
+      if (!SUPABASE_CONFIGURED || !supabase) {
+        throw new Error('Supabase가 설정되지 않았습니다.');
+      }
+      // 1) auth 계정 생성
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: newAccount.email,
+        password: newAccount.password
+      });
+      if (signUpError) throw signUpError;
+
+      const userId = signUpData.user?.id;
+      if (!userId) throw new Error('사용자 ID를 가져오지 못했습니다.');
+
+      // 2) public.users upsert
+      const { error: upsertError } = await supabase
+        .from('users')
+        .upsert({
+          id: userId,
           email: newAccount.email,
-          password: newAccount.password, // 실제로는 해시 처리 필요
           name: newAccount.name,
           role: newAccount.role,
-          createdAt: new Date().toISOString().split('T')[0],
           status: 'active'
-        };
-        
-        setAccounts(prev => [...prev, account]);
-        setNewAccount({ email: '', password: '', confirmPassword: '', name: '', role: 'viewer' });
-        setShowCreateAccountModal(false);
-        setIsCreatingAccount(false);
-        
-        showSuccess(`${account.name} 계정이 성공적으로 생성되었습니다.`);
-      }, 1000);
+        }, { onConflict: 'id' });
+      if (upsertError) throw upsertError;
+
+      setNewAccount({ email: '', password: '', confirmPassword: '', name: '', role: 'viewer' });
+      setShowCreateAccountModal(false);
+      showSuccess('계정이 생성되었습니다. 가입 확인 메일을 확인하세요.');
     } catch (error) {
       console.error('Account creation failed:', error);
-      showError('계정 생성 중 오류가 발생했습니다. 다시 시도해주세요.');
+      showError(error.message || '계정 생성 중 오류가 발생했습니다.');
+    } finally {
       setIsCreatingAccount(false);
     }
   }, [newAccount, accounts, showError, showSuccess]);
@@ -4992,31 +5078,47 @@ const DateModalContent = ({ selectedDateBills, selectedCompletedBills, selectedS
       setLoginError('이메일과 패스워드를 모두 입력해주세요.');
       return;
     }
-    
+    if (!SUPABASE_CONFIGURED || !supabase) {
+      setLoginError('Supabase가 설정되지 않았습니다.');
+      return;
+    }
     setIsLoggingIn(true);
     setLoginError('');
-    
-    // 실제 구현에서는 여기서 API 호출
-    setTimeout(() => {
-      // 등록된 계정에서 이메일과 패스워드 확인
-      const foundAccount = accounts.find(account => 
-        account.email === loginForm.email && 
-        account.password === loginForm.password &&
-        account.status === 'active'
-      );
-      
-      if (foundAccount) {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginForm.email,
+        password: loginForm.password
+      });
+      if (error) throw error;
+
+      const session = data.session;
+      if (session?.user?.id) {
         setIsLoggedIn(true);
-        setCurrentUserId(foundAccount.id);
-        // currentView는 useEffect에서 자동으로 dashboard로 변경됨
+        setCurrentUserId(session.user.id);
+        setCurrentView('dashboard');
         setLoginForm({ email: '', password: '' });
-        setLoginError('');
-      } else {
-        setLoginError('이메일 또는 패스워드가 올바르지 않습니다.');
+        // ensure user row exists
+        const { data: userRow, error: userErr } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (!userRow && !userErr) {
+          await supabase.from('users').insert({
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.email?.split('@')[0] || '사용자',
+            role: 'viewer',
+            status: 'active'
+          });
+        }
       }
+    } catch (e) {
+      setLoginError(e.message || '로그인 중 오류가 발생했습니다.');
+    } finally {
       setIsLoggingIn(false);
-    }, 1000);
-  }, [loginForm, accounts]);
+    }
+  }, [loginForm]);
 
   const handleForgotPassword = useCallback(async () => {
     if (!forgotPasswordEmail || !forgotPasswordEmail.trim()) {
@@ -11239,13 +11341,17 @@ const SidebarContent = ({
               </div>
             </div>
             <button 
-              onClick={() => {
-                setIsLoggedIn(false);
-                setCurrentUserId(null);
-                setCurrentView('login'); // Vercel 배포용: localStorage 사용 중단
-                setShowProfileModal(false);
-                // storageUtils.remove('is_logged_in'); - localStorage 사용 중단
-                // storageUtils.remove('current_user_id'); - localStorage 사용 중단
+              onClick={async () => {
+                try {
+                  if (SUPABASE_CONFIGURED && supabase) {
+                    await supabase.auth.signOut();
+                  }
+                } finally {
+                  setIsLoggedIn(false);
+                  setCurrentUserId(null);
+                  setCurrentView('login');
+                  setShowProfileModal(false);
+                }
               }}
               className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-500 text-white rounded-lg hover:from-red-500 hover:to-red-400 transition-all duration-200 font-medium text-sm shadow-lg"
             >
