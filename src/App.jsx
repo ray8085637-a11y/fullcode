@@ -4054,7 +4054,37 @@ const TaxManagementApp = () => {
     }
   }, [showError, showSuccess]);
 
-  const currentUser = accounts.find(account => account.id === currentUserId) || null;
+  const [currentUser, setCurrentUser] = useState(null);
+  
+  // Supabase에서 현재 사용자 정보 가져오기
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      if (!currentUserId) {
+        setCurrentUser(null);
+        return;
+      }
+      
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', currentUserId)
+          .single();
+        
+        if (error) {
+          console.error('Error fetching user:', error);
+          setCurrentUser(null);
+        } else {
+          setCurrentUser(data);
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+        setCurrentUser(null);
+      }
+    };
+    
+    fetchCurrentUser();
+  }, [currentUserId]);
 
   // 권한 확인 함수들
   const canManageAccounts = currentUser?.role === 'super_admin' || currentUser?.role === 'admin';
