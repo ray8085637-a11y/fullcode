@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Upload, Calendar, AlertCircle, CheckCircle, Clock, Plus, X, Trash2, BarChart3, TrendingUp, PieChart, DollarSign, Menu, ChevronLeft, ChevronRight, Zap, PanelLeft, Bell, MapPin, FileText, User, Lock, RefreshCw, Wifi, WifiOff } from 'lucide-react';
-import { supabase } from './supabaseClient.js'
+import { supabase, SUPABASE_CONFIGURED } from './supabaseClient.js'
 
 const ExcelExportUtils = {
   formatBillsForExcel: (bills, stations) => {
