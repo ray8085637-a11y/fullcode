@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Upload, Calendar, AlertCircle, CheckCircle, Clock, Plus, X, Trash2, BarChart3, TrendingUp, PieChart, DollarSign, Menu, ChevronLeft, ChevronRight, Zap, PanelLeft, Bell, MapPin, FileText, User, Lock, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { supabase } from './supabaseClient.js';
 
 const ExcelExportUtils = {
   formatBillsForExcel: (bills, stations) => {
@@ -3653,10 +3654,47 @@ const TaxManagementApp = () => {
   const { trash, moveToTrash, restoreFromTrash, permanentDelete, emptyTrash } = useTrash();
 
   // 상태들 - 로그인 상태에 따른 초기 뷰 설정
-  const [currentView, setCurrentView] = useState(() => {
-    const savedLoginState = storageUtils.load('is_logged_in', false);
-    return savedLoginState ? 'dashboard' : 'login';
-  });
+  const [currentView, setCurrentView] = useState('login');
+  
+  // Supabase Auth 세션 확인
+  useEffect(() => {
+    const checkAuthSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Session check error:', error);
+          return;
+        }
+        
+        if (session?.user) {
+          setIsLoggedIn(true);
+          setCurrentUserId(session.user.id);
+          setCurrentView('dashboard');
+        }
+      } catch (error) {
+        console.error('Auth session check failed:', error);
+      }
+    };
+    
+    checkAuthSession();
+    
+    // Auth 상태 변경 리스너
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          setIsLoggedIn(true);
+          setCurrentUserId(session.user.id);
+          setCurrentView('dashboard');
+        } else if (event === 'SIGNED_OUT') {
+          setIsLoggedIn(false);
+          setCurrentUserId(null);
+          setCurrentView('login');
+        }
+      }
+    );
+    
+    return () => subscription.unsubscribe();
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [isToggleHovered, setIsToggleHovered] = useState(false);
@@ -5040,27 +5078,28 @@ const DateModalContent = ({ selectedDateBills, selectedCompletedBills, selectedS
     setIsLoggingIn(true);
     setLoginError('');
     
-    // 실제 구현에서는 여기서 API 호출
-    setTimeout(() => {
-      // 등록된 계정에서 이메일과 패스워드 확인
-      const foundAccount = accounts.find(account => 
-        account.email === loginForm.email && 
-        account.password === loginForm.password &&
-        account.status === 'active'
-      );
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginForm.email,
+        password: loginForm.password
+      });
       
-      if (foundAccount) {
+      if (error) {
+        console.error('Supabase login error:', error);
+        setLoginError('이메일 또는 패스워드가 올바르지 않습니다.');
+      } else {
         setIsLoggedIn(true);
-        setCurrentUserId(foundAccount.id);
-        // currentView는 useEffect에서 자동으로 dashboard로 변경됨
+        setCurrentUserId(data.user.id);
         setLoginForm({ email: '', password: '' });
         setLoginError('');
-      } else {
-        setLoginError('이메일 또는 패스워드가 올바르지 않습니다.');
       }
+    } catch (error) {
+      console.error('Login error:', error);
+      setLoginError('로그인 중 오류가 발생했습니다.');
+    } finally {
       setIsLoggingIn(false);
-    }, 1000);
-  }, [loginForm, accounts]);
+    }
+  }, [loginForm]);
 
   const handleForgotPassword = useCallback(async () => {
     if (!forgotPasswordEmail || !forgotPasswordEmail.trim()) {
@@ -11283,13 +11322,16 @@ const SidebarContent = ({
               </div>
             </div>
             <button 
-              onClick={() => {
+              onClick={async () => {
+                try {
+                  await supabase.auth.signOut();
+                } catch (error) {
+                  console.error('Logout error:', error);
+                }
                 setIsLoggedIn(false);
                 setCurrentUserId(null);
-                setCurrentView('login'); // Vercel 배포용: localStorage 사용 중단
+                setCurrentView('login');
                 setShowProfileModal(false);
-                // storageUtils.remove('is_logged_in'); - localStorage 사용 중단
-                // storageUtils.remove('current_user_id'); - localStorage 사용 중단
               }}
               className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-500 text-white rounded-lg hover:from-red-500 hover:to-red-400 transition-all duration-200 font-medium text-sm shadow-lg"
             >
