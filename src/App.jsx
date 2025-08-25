@@ -1706,60 +1706,36 @@ Water TT 관리시스템
 
   // 일반 이메일 발송 함수
   sendEmail: async (toEmails, subject, content) => {
-    if (!SendGridAPI.hasValidApiKey()) {
-      throw new Error('SendGrid API 키가 설정되지 않았습니다.');
-    }
-
     // 문자열이면 배열로 변환
     const recipients = Array.isArray(toEmails) ? toEmails : [toEmails];
     
-    const emailData = {
-      personalizations: [{
-        to: recipients.map(email => ({ email })),
-        subject: subject
-      }],
-      from: {
-        email: SendGridAPI.config.fromEmail,
-        name: SendGridAPI.config.fromName
-      },
-      content: [{
-        type: 'text/plain',
-        value: content
-      }]
-    };
-
     try {
-      const response = await fetch(SendGridAPI.config.endpoint, {
+      const response = await fetch('/api/send-email', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${SendGridAPI.config.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(emailData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toEmails: recipients,
+          subject,
+          content,
+          contentType: 'text/plain',
+          fromEmail: SendGridAPI.config.fromEmail,
+          fromName: SendGridAPI.config.fromName
+        })
       });
 
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const errorText = await response.text();
         return {
           success: false,
-          error: `HTTP ${response.status}: ${errorText}`,
+          error: result?.error || `HTTP ${response.status}`,
           statusCode: response.status,
           isNetworkError: false
         };
       }
 
-      return {
-        success: true,
-        message: '이메일이 성공적으로 전송되었습니다.'
-      };
-
+      return { success: true, message: '이메일이 성공적으로 전송되었습니다.' };
     } catch (error) {
-      console.error('SendGrid API 호출 실패:', error);
-      return {
-        success: false,
-        error: error.message,
-        isNetworkError: true
-      };
+      return { success: false, error: error.message, isNetworkError: true };
     }
   },
 
@@ -1791,68 +1767,46 @@ Water TT 관리시스템
 
   // 테스트 이메일 전송
   sendTestEmail: async (toEmail) => {
-    if (!SendGridAPI.hasValidApiKey()) {
-      throw new Error('SendGrid API 키가 설정되지 않았습니다.');
-    }
-
-    const emailData = {
-      personalizations: [{
-        to: [{ email: toEmail }],
-        subject: 'Water TT 관리시스템 테스트 이메일'
-      }],
-      from: {
-        email: SendGridAPI.config.fromEmail,
-        name: SendGridAPI.config.fromName
-      },
-      content: [{
-        type: 'text/html',
-        value: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #2563eb;">Water TT 관리시스템</h2>
-            <p>안녕하세요!</p>
-            <p>SendGrid 이메일 설정이 성공적으로 완료되었습니다.</p>
-            <p>이 테스트 이메일은 ${new Date().toLocaleString('ko-KR')}에 전송되었습니다.</p>
-            <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
-            <p style="color: #6b7280; font-size: 14px;">
-              이 이메일은 시스템 테스트용으로 발송되었습니다.
-            </p>
-          </div>
-        `
-      }]
-    };
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563eb;">Water TT 관리시스템</h2>
+        <p>안녕하세요!</p>
+        <p>SendGrid 이메일 설정이 성공적으로 완료되었습니다.</p>
+        <p>이 테스트 이메일은 ${new Date().toLocaleString('ko-KR')}에 전송되었습니다.</p>
+        <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
+        <p style="color: #6b7280; font-size: 14px;">
+          이 이메일은 시스템 테스트용으로 발송되었습니다.
+        </p>
+      </div>
+    `;
 
     try {
-      const response = await fetch(SendGridAPI.config.endpoint, {
+      const response = await fetch('/api/send-email', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${SendGridAPI.config.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(emailData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toEmails: [toEmail],
+          subject: 'Water TT 관리시스템 테스트 이메일',
+          content: html,
+          contentType: 'text/html',
+          fromEmail: SendGridAPI.config.fromEmail,
+          fromName: SendGridAPI.config.fromName
+        })
       });
 
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const errorText = await response.text();
         return {
           success: false,
-          error: `HTTP ${response.status}: ${errorText}`,
+          error: result?.error || `HTTP ${response.status}`,
           statusCode: response.status,
           isNetworkError: false
         };
       }
 
-      return {
-        success: true,
-        message: '테스트 이메일이 성공적으로 전송되었습니다.'
-      };
-
+      return { success: true, message: '테스트 이메일이 성공적으로 전송되었습니다.' };
     } catch (error) {
-      console.error('SendGrid API 호출 실패:', error);
-      return {
-        success: false,
-        error: error.message,
-        isNetworkError: true
-      };
+      return { success: false, error: error.message, isNetworkError: true };
     }
   }
 };
